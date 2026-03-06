@@ -86,12 +86,19 @@ jobs:
       - name: Build MkDocs
         run: mkdocs build
 
-      # ---- NEW DEPLOY STEPS ----
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./site
 
+  # ← SEPARATE JOB — this is mandatory
+  deploy:
+    needs: build           # ← waits for build job to finish
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages   # ← required
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

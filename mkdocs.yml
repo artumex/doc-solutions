@@ -1,0 +1,17 @@
+site_name: Solutions Portal
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+  palette:
+    primary: indigo
+    accent: indigo
+
+plugins:
+  - search
+  - tags:
+      tags_file: docs/tags.md

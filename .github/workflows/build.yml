@@ -1,0 +1,96 @@
+name: Build & Deploy Docs Portal
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'    # every 6 hours
+  workflow_dispatch:           # manual trigger button
+  repository_dispatch:
+    types: [solution-updated] # triggered by solution repos on push
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout portal repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install mkdocs-material pyyaml
+
+      - name: Fetch README from all solution repos
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_USER: artumex
+        run: |
+          mkdir -p docs/solutions
+
+          # Fetch all repos (public + private) and filter by topic "solution-doc"
+          curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/user/repos?per_page=100&type=all" \
+          | python3 -c "
+          import sys, json
+          repos = json.load(sys.stdin)
+          for r in repos:
+              topics = r.get('topics', [])
+              if 'solution-doc' in topics:
+                  other = [t for t in topics if t != 'solution-doc']
+                  print(r['name'] + ' ' + ','.join(other))
+          " > solutions.txt
+
+          echo "--- Found solutions ---"
+          cat solutions.txt
+          echo "----------------------"
+
+          while IFS=' ' read -r repo topics; do
+            echo "Processing: $repo (tags: $topics)"
+
+            git clone --depth 1 \
+              https://x-access-token:$GH_TOKEN@github.com/$GH_USER/$repo.git \
+              /tmp/$repo
+
+            if [ -f "/tmp/$repo/README.md" ]; then
+
+              # Build YAML front matter from GitHub topics
+              FRONT_MATTER="---\ntags:"
+              IFS=',' read -ra TAG_LIST <<< "$topics"
+              for tag in "${TAG_LIST[@]}"; do
+                FRONT_MATTER="${FRONT_MATTER}\n  - ${tag}"
+              done
+              FRONT_MATTER="${FRONT_MATTER}\n---\n\n"
+
+              # Check if README already has front matter
+              FIRST_LINE=$(head -1 /tmp/$repo/README.md)
+              if [ "$FIRST_LINE" = "---" ]; then
+                # Already has front matter — copy as-is
+                cp /tmp/$repo/README.md docs/solutions/${repo}.md
+                echo "⚠️  $repo README has existing front matter — tags not injected"
+              else
+                # Prepend generated front matter
+                printf "$FRONT_MATTER" > docs/solutions/${repo}.md
+                cat /tmp/$repo/README.md >> docs/solutions/${repo}.md
+                echo "✅ Added $repo with tags: $topics"
+              fi
+
+            else
+              echo "⚠️  No README.md found in $repo — skipping"
+            fi
+
+          done < solutions.txt
+
+      - name: Generate navigation
+        run: python scripts/gen_nav.py
+
+      - name: Build MkDocs
+        run: mkdocs build
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site

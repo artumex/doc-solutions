@@ -1,4 +1,5 @@
 site_name: Solutions Portal
+site_url: https://YOUR_GITHUB_USERNAME.github.io/docs-portal
 
 theme:
   name: material
@@ -14,4 +15,4 @@ theme:
 plugins:
   - search
   - tags:
-      tags_file: docs/tags.md
+      tags_file: tags.md        # ← was docs/tags.md

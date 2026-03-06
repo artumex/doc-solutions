@@ -72,7 +72,7 @@ jobs:
                 echo "⚠️  $repo README has existing front matter — tags not injected"
               else
                 # Prepend generated front matter
-                printf "$FRONT_MATTER" > docs/solutions/${repo}.md
+                printf '%b' "$FRONT_MATTER" > docs/solutions/${repo}.md
                 cat /tmp/$repo/README.md >> docs/solutions/${repo}.md
                 echo "✅ Added $repo with tags: $topics"
               fi

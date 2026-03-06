@@ -2,15 +2,19 @@ name: Build & Deploy Docs Portal
 
 on:
   schedule:
-    - cron: '0 */6 * * *'    # every 6 hours
-  workflow_dispatch:           # manual trigger button
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
   repository_dispatch:
-    types: [solution-updated] # triggered by solution repos on push
+    types: [solution-updated]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout portal repo
         uses: actions/checkout@v4
@@ -30,7 +34,6 @@ jobs:
         run: |
           mkdir -p docs/solutions
 
-          # Fetch all repos (public + private) and filter by topic "solution-doc"
           curl -s -H "Authorization: token $GH_TOKEN" \
             "https://api.github.com/user/repos?per_page=100&type=all" \
           | python3 -c "
@@ -55,8 +58,6 @@ jobs:
               /tmp/$repo
 
             if [ -f "/tmp/$repo/README.md" ]; then
-
-              # Build YAML front matter from GitHub topics
               FRONT_MATTER="---\ntags:"
               IFS=',' read -ra TAG_LIST <<< "$topics"
               for tag in "${TAG_LIST[@]}"; do
@@ -64,19 +65,15 @@ jobs:
               done
               FRONT_MATTER="${FRONT_MATTER}\n---\n\n"
 
-              # Check if README already has front matter
               FIRST_LINE=$(head -1 /tmp/$repo/README.md)
               if [ "$FIRST_LINE" = "---" ]; then
-                # Already has front matter — copy as-is
                 cp /tmp/$repo/README.md docs/solutions/${repo}.md
-                echo "⚠️  $repo README has existing front matter — tags not injected"
+                echo "⚠️  $repo README has existing front matter"
               else
-                # Prepend generated front matter
                 printf '%b' "$FRONT_MATTER" > docs/solutions/${repo}.md
                 cat /tmp/$repo/README.md >> docs/solutions/${repo}.md
                 echo "✅ Added $repo with tags: $topics"
               fi
-
             else
               echo "⚠️  No README.md found in $repo — skipping"
             fi
@@ -89,8 +86,12 @@ jobs:
       - name: Build MkDocs
         run: mkdocs build
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+      # ---- NEW DEPLOY STEPS ----
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./site
+          path: ./site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -8,15 +8,15 @@ if os.path.exists(solutions_dir):
     for filename in sorted(os.listdir(solutions_dir)):
         if filename.endswith(".md"):
             label = filename.replace(".md", "").replace("-", " ").title()
-            nav_entries.append({label: f"solutions/{filename}"})
+            nav_entries.append({label: f"solutions/{filename}"})  # ← no docs/ prefix
 
 with open("mkdocs.yml", "r") as f:
     config = yaml.safe_load(f)
 
 config["nav"] = [
-    {"Home": "docs/index.md"},
+    {"Home": "index.md"},           # ← was docs/index.md
     {"Solutions": nav_entries},
-    {"Tags": "docs/tags.md"},
+    {"Tags": "tags.md"},            # ← was docs/tags.md
 ]
 
 with open("mkdocs.yml", "w") as f:

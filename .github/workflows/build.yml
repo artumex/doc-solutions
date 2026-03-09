@@ -121,6 +121,14 @@ jobs:
               echo "   ✅ README added (ref: ${LATEST_TAG:-HEAD})"
             fi
 
+            # Add markdown="block" to <details> and <summary> so MkDocs md_in_html
+            # extension renders Markdown content inside HTML blocks correctly
+            sed -i \
+              -e 's|<details>|<details markdown="block">|g' \
+              -e 's|<details open>|<details markdown="block" open>|g' \
+              -e 's|<summary>\(.*\)</summary>|<summary markdown="span">\1</summary>|g' \
+              docs/solutions/${repo}.md
+
             # ── 2c. Copy assets/ folder and rewrite image paths ───────────────
             if [ -d "/tmp/$repo/assets" ]; then
               mkdir -p docs/solutions/assets/${repo}

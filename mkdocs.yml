@@ -16,3 +16,8 @@ plugins:
   - search
   - tags:
       tags_file: tags.md        # ← was docs/tags.md
+
+markdown_extensions:
+  - md_in_html
+  - toc:
+      permalink: true

@@ -32,6 +32,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GH_USER: artumex
         run: |
+          set -eo pipefail
           mkdir -p docs/solutions
 
           # ── 1. Discover repos with GitHub topic 'solution-doc' ───────────────
@@ -50,6 +51,8 @@ jobs:
           echo "--------------------------------------"
 
           # ── 2. For each repo: resolve latest Git tag, checkout, process ──────
+          # set +e so individual repo failures don't abort the whole job
+          set +e
           while IFS= read -r repo; do
             echo "▶  $repo"
 
@@ -62,17 +65,21 @@ jobs:
           if not tags:
               sys.exit(1)
           print(tags[0]['name'])
-          ")
-            if [ $? -ne 0 ]; then
-              echo "⏭️  $repo — no Git tags found, skipping"
-              continue
-            fi
-            echo "   🏷  latest tag: $LATEST_TAG"
+          " 2>/dev/null)
 
-            # Clone at exact tag (shallow, single commit)
-            git clone --depth 1 --branch "$LATEST_TAG" \
-              https://x-access-token:$GH_TOKEN@github.com/$GH_USER/$repo.git \
-              /tmp/$repo
+            if [ -n "$LATEST_TAG" ]; then
+              echo "   🏷  latest tag: $LATEST_TAG"
+              git clone --depth 1 --branch "$LATEST_TAG" \
+                https://x-access-token:$GH_TOKEN@github.com/$GH_USER/$repo.git \
+                /tmp/$repo \
+                || { echo "   ⏭️  $repo — clone failed for tag $LATEST_TAG, skipping"; continue; }
+            else
+              echo "   ⚠️  $repo — no Git tags, cloning HEAD (unversioned)"
+              git clone --depth 1 \
+                https://x-access-token:$GH_TOKEN@github.com/$GH_USER/$repo.git \
+                /tmp/$repo \
+                || { echo "   ⏭️  $repo — clone failed, skipping"; continue; }
+            fi
 
             # ── 2a. Read portal.yml — used ONLY for MkDocs tags ──────────────
             TAGS=""
@@ -114,7 +121,7 @@ jobs:
               echo "   ✅ README added (existing front matter stripped)"
             else
               cat /tmp/$repo/README.md >> docs/solutions/${repo}.md
-              echo "   ✅ README added (tag: $LATEST_TAG)"
+              echo "   ✅ README added (ref: ${LATEST_TAG:-HEAD})"
             fi
 
             # ── 2c. Copy assets/ folder and rewrite image paths ───────────────
@@ -127,6 +134,13 @@ jobs:
             fi
 
           done < solution_repos.txt
+
+          # ── 3. Ensure docs/solutions/ has at least one .md (mkdocs guard) ───
+          if [ -z "$(ls docs/solutions/*.md 2>/dev/null)" ]; then
+            echo "⚠️  No solutions fetched — creating empty placeholder"
+            printf '# No solutions available\n\nNo solution repositories were found at build time.\n' \
+              > docs/solutions/_empty.md
+          fi
 
       - name: Generate navigation
         run: python scripts/gen_nav.py

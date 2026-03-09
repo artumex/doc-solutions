@@ -128,8 +128,11 @@ jobs:
             if [ -d "/tmp/$repo/assets" ]; then
               mkdir -p docs/solutions/assets/${repo}
               cp -r /tmp/$repo/assets/. docs/solutions/assets/${repo}/
-              sed -i "s|](./assets/|](assets/${repo}/|g" docs/solutions/${repo}.md
-              sed -i "s|](assets/|](assets/${repo}/|g"  docs/solutions/${repo}.md
+              # Rewrite both forms in a single pass to avoid double-substitution:
+              #   ./assets/foo.png  →  assets/solution-1/foo.png
+              #      assets/foo.png  →  assets/solution-1/foo.png
+              sed -i -E "s|\]\(\./assets/|\](assets/${repo}/|g; s|\]\(assets/([^)]*)|\](assets/${repo}/\1|g" \
+                docs/solutions/${repo}.md
               echo "   📎 assets/ copied → docs/solutions/assets/${repo}/"
             fi
 

@@ -74,11 +74,8 @@ jobs:
                 /tmp/$repo \
                 || { echo "   ⏭️  $repo — clone failed for tag $LATEST_TAG, skipping"; continue; }
             else
-              echo "   ⚠️  $repo — no Git tags, cloning HEAD (unversioned)"
-              git clone --depth 1 \
-                https://x-access-token:$GH_TOKEN@github.com/$GH_USER/$repo.git \
-                /tmp/$repo \
-                || { echo "   ⏭️  $repo — clone failed, skipping"; continue; }
+              echo "   ⏭️  $repo — no Git tags found, skipping"
+              continue
             fi
 
             # ── 2a. Read portal.yml — used ONLY for MkDocs tags ──────────────

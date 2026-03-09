@@ -27,58 +27,106 @@ jobs:
       - name: Install dependencies
         run: pip install mkdocs-material pyyaml
 
-      - name: Fetch README from all solution repos
+      - name: Fetch README and assets from all solution repos
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GH_USER: artumex
         run: |
           mkdir -p docs/solutions
 
+          # ── 1. Discover repos with GitHub topic 'solution-doc' ───────────────
           curl -s -H "Authorization: token $GH_TOKEN" \
             "https://api.github.com/user/repos?per_page=100&type=all" \
           | python3 -c "
           import sys, json
           repos = json.load(sys.stdin)
           for r in repos:
-              topics = r.get('topics', [])
-              if 'solution-doc' in topics:
-                  other = [t for t in topics if t != 'solution-doc']
-                  print(r['name'] + ' ' + ','.join(other))
-          " > solutions.txt
+              if 'solution-doc' in r.get('topics', []):
+                  print(r['name'])
+          " > solution_repos.txt
 
-          echo "--- Found solutions ---"
-          cat solutions.txt
-          echo "----------------------"
+          echo "--- Repos with topic solution-doc ---"
+          cat solution_repos.txt
+          echo "--------------------------------------"
 
-          while IFS=' ' read -r repo topics; do
-            echo "Processing: $repo (tags: $topics)"
+          # ── 2. For each repo: resolve latest Git tag, checkout, process ──────
+          while IFS= read -r repo; do
+            echo "▶  $repo"
 
-            git clone --depth 1 \
+            # Fetch latest tag via GitHub API (sorted by version, most recent first)
+            LATEST_TAG=$(curl -s -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/repos/$GH_USER/$repo/tags" \
+              | python3 -c "
+          import sys, json
+          tags = json.load(sys.stdin)
+          if not tags:
+              sys.exit(1)
+          print(tags[0]['name'])
+          ")
+            if [ $? -ne 0 ]; then
+              echo "⏭️  $repo — no Git tags found, skipping"
+              continue
+            fi
+            echo "   🏷  latest tag: $LATEST_TAG"
+
+            # Clone at exact tag (shallow, single commit)
+            git clone --depth 1 --branch "$LATEST_TAG" \
               https://x-access-token:$GH_TOKEN@github.com/$GH_USER/$repo.git \
               /tmp/$repo
 
-            if [ -f "/tmp/$repo/README.md" ]; then
-              FRONT_MATTER="---\ntags:"
-              IFS=',' read -ra TAG_LIST <<< "$topics"
-              for tag in "${TAG_LIST[@]}"; do
-                FRONT_MATTER="${FRONT_MATTER}\n  - ${tag}"
-              done
-              FRONT_MATTER="${FRONT_MATTER}\n---\n\n"
-
-              FIRST_LINE=$(head -1 /tmp/$repo/README.md)
-              if [ "$FIRST_LINE" = "---" ]; then
-                cp /tmp/$repo/README.md docs/solutions/${repo}.md
-                echo "⚠️  $repo README has existing front matter"
-              else
-                printf '%b' "$FRONT_MATTER" > docs/solutions/${repo}.md
-                cat /tmp/$repo/README.md >> docs/solutions/${repo}.md
-                echo "✅ Added $repo with tags: $topics"
-              fi
+            # ── 2a. Read portal.yml — used ONLY for MkDocs tags ──────────────
+            TAGS=""
+            if [ -f "/tmp/$repo/portal.yml" ]; then
+              TAGS=$(python3 -c "
+          import sys, yaml
+          with open('/tmp/$repo/portal.yml') as f:
+              cfg = yaml.safe_load(f)
+          tags = cfg.get('tags', [])
+          if tags:
+              print('\n'.join(f'  - {t}' for t in tags))
+          ")
+              [ -z "$TAGS" ] && echo "   ℹ️  $repo — portal.yml has no tags"
             else
-              echo "⚠️  No README.md found in $repo — skipping"
+              echo "   ℹ️  $repo — no portal.yml, proceeding without tags"
             fi
 
-          done < solutions.txt
+            # ── 2b. Inject front matter + copy README.md ─────────────────────
+            if [ ! -f "/tmp/$repo/README.md" ]; then
+              echo "⚠️  $repo — no README.md found, skipping"
+              continue
+            fi
+
+            {
+              echo "---"
+              if [ -n "$TAGS" ]; then
+                echo "tags:"
+                echo "$TAGS"
+              fi
+              echo "---"
+              echo ""
+            } > docs/solutions/${repo}.md
+
+            FIRST_LINE=$(head -1 /tmp/$repo/README.md)
+            if [ "$FIRST_LINE" = "---" ]; then
+              # Strip any existing front matter from the README before appending
+              awk 'BEGIN{fm=0} /^---$/{fm++; next} fm==1{next} fm>=2{print}' \
+                /tmp/$repo/README.md >> docs/solutions/${repo}.md
+              echo "   ✅ README added (existing front matter stripped)"
+            else
+              cat /tmp/$repo/README.md >> docs/solutions/${repo}.md
+              echo "   ✅ README added (tag: $LATEST_TAG)"
+            fi
+
+            # ── 2c. Copy assets/ folder and rewrite image paths ───────────────
+            if [ -d "/tmp/$repo/assets" ]; then
+              mkdir -p docs/solutions/assets/${repo}
+              cp -r /tmp/$repo/assets/. docs/solutions/assets/${repo}/
+              sed -i "s|](./assets/|](assets/${repo}/|g" docs/solutions/${repo}.md
+              sed -i "s|](assets/|](assets/${repo}/|g"  docs/solutions/${repo}.md
+              echo "   📎 assets/ copied → docs/solutions/assets/${repo}/"
+            fi
+
+          done < solution_repos.txt
 
       - name: Generate navigation
         run: python scripts/gen_nav.py
